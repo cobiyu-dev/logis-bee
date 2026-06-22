@@ -1,0 +1,5 @@
+.env
+set-tokens.sh
+node_modules/
+*.log
+.DS_Store

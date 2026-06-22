@@ -1,0 +1,8 @@
+# 사용법: 이 파일을 set-tokens.sh로 복사하고 실제 토큰을 채운 뒤,
+#   source set-tokens.sh
+# 로 현재 셸에 토큰을 주입한다. 그 셸에서 npm run dev 실행.
+#
+# set-tokens.sh는 .gitignore로 커밋이 차단된다. 그래도 평문 파일이므로 취급 주의.
+
+export SLACK_BOT_TOKEN='xoxb-...'   # Bot User OAuth Token
+export SLACK_APP_TOKEN='xapp-...'   # App-Level Token (connections:write)
