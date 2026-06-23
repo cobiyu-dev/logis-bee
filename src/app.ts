@@ -14,7 +14,23 @@ const TRIGGER_EMOJI = 'eyes';
 // 곧 제거 예정. 제거 시: 이 커밋 git revert, 또는 git checkout 4b24f05 -- src/app.ts + scoring.ts/test 삭제.
 // 채점 순수 함수는 src/scoring.ts (테스트 가능하게 분리).
 const predictions = new Map<string, Pred>(); // userId -> 예측 (인메모리, 재시작 시 초기화)
+let started = false; // 예측 오픈 여부. 예측시작 트리거 전엔 접수 안 받음
 let answer: Pred | null = null; // 정답(경기 결과). null이면 미발표 = 예측 접수 가능
+
+// 시작 시 안내하는 전체 규칙
+const RULES = [
+  '⚽️ *대한민국 : 남아공 승부예측 시작!* 가장 못 맞춘 사람이 커피 ☕️',
+  '',
+  '*참여 방법*',
+  '• 예측 제출: `@로지스비 예측 2:1` (대한민국 : 남아공, 점수 0~49)',
+  '• 다시 내면 덮어써져요 (최신 예측만 인정)',
+  '• 현황 보기: `@로지스비 예측 결과`',
+  '',
+  '*채점 규칙* (점수가 낮을수록 잘 맞춘 것)',
+  '• 승/무/패 결과부터 맞히는 게 우선 (틀리면 큰 감점)',
+  '• 같은 결과끼리는 골 수 차이가 적을수록 우위',
+  '• 가장 못 맞춘 사람이 커피 ☕️ (동점이면 공동, 모두 동점이면 패스)',
+].join('\n');
 
 function formatBoard(): string {
   if (predictions.size === 0) {
@@ -62,14 +78,33 @@ app.event('app_mention', async ({ event, client, logger }) => {
   const reply = (t: string) =>
     client.chat.postMessage({ channel: event.channel, thread_ts: threadTs, text: t });
 
+  // "예측시작" → 예측 오픈 + 규칙 안내 (반드시 "예측" 분기보다 먼저 체크)
+  if (text.includes('예측시작') || text.includes('예측 시작')) {
+    if (answer) {
+      await reply('이미 경기가 끝났어요 🏁 결과는 "@로지스비 예측 결과"로 확인하세요.');
+      return;
+    }
+    if (started) {
+      await reply('이미 예측이 진행 중이에요! 예측은 "@로지스비 예측 2:1" 형식으로 제출하세요.');
+      return;
+    }
+    started = true;
+    await reply(RULES);
+    return;
+  }
+
   // "정답" → 경기 결과 입력, 결과 발표 + 예측 잠금
   if (text.includes('정답')) {
+    if (!started) {
+      await reply('아직 예측이 시작 안 됐어요. 먼저 "@로지스비 예측시작"!');
+      return;
+    }
     const ans = parseScore(text);
     if (!ans) {
       await reply('정답은 "@로지스비 정답 2:1" 형식으로! (대한민국:남아공, 점수 0~49)');
       return;
     }
-    answer = ans; // 잠금 활성화
+    answer = ans; // 마감 + 잠금
     await reply(formatFinal(ans));
     return;
   }
@@ -84,6 +119,11 @@ app.event('app_mention', async ({ event, client, logger }) => {
     // 정답 발표 후엔 예측 접수 잠금
     if (answer) {
       await reply('이미 경기가 끝났어요 🏁 결과는 "@로지스비 예측 결과"로 확인하세요.');
+      return;
+    }
+    // 시작 전엔 접수 안 받음
+    if (!started) {
+      await reply('아직 예측이 시작 안 됐어요. 먼저 "@로지스비 예측시작"!');
       return;
     }
     // "예측 2:1" → 접수 (덮어쓰기)
