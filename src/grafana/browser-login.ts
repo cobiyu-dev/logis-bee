@@ -50,7 +50,7 @@ export async function acquireViaBrowser(cfg: GrafanaConfig): Promise<SessionData
   try {
     return await runLoginFlow(cfg);
   } finally {
-    closeSpawnedBrowser(handle);
+    await closeSpawnedBrowser(handle);
   }
 }
 
