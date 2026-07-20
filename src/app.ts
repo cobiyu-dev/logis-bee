@@ -50,6 +50,36 @@ function required(name: string): string {
   return v;
 }
 
+/**
+ * 스레드의 이전 대화를 읽어 claude에게 넘길 맥락 문자열로 만든다.
+ * "좀 더 자세하게" 같은 후속 멘션은 앞 대화를 알아야 뜻이 통하므로, 스레드 전체를 시간순으로 넘긴다.
+ *
+ * - `excludeTs`(이번 멘션, 방금 단 placeholder)는 중복·잡음이라 뺀다.
+ * - 봇 메시지(`bot_id` 있음)는 "로지스비", 사람은 "사용자"로 라벨링해 누가 무슨 말을 했는지 구분한다.
+ * - 봇이 이전에 보낸 blocks JSON/텍스트도 원문 그대로 넣어, claude가 자기가 뭘 답했는지 알고 이어가게 한다.
+ * 이전 메시지가 없으면(첫 멘션) 빈 문자열 → 호출부에서 맥락 없이 이번 요청만 넘긴다.
+ */
+async function buildThreadContext(
+  client: App['client'],
+  channel: string,
+  threadTs: string,
+  excludeTs: string[],
+): Promise<string> {
+  const res = await client.conversations.replies({ channel, ts: threadTs, limit: 100 });
+  const messages = res.messages ?? [];
+  const skip = new Set(excludeTs);
+
+  const lines: string[] = [];
+  for (const m of messages) {
+    if (m.ts && skip.has(m.ts)) continue;
+    const body = (m.text ?? '').trim();
+    if (!body) continue;
+    const who = m.bot_id ? '로지스비(너의 이전 답변)' : '사용자';
+    lines.push(`[${who}]\n${body}`);
+  }
+  return lines.join('\n\n');
+}
+
 // 이모지 트리거(👀). 오더비 등 다른 봇과 겹치지 않게. 바꾸려면 이 줄만 수정.
 const TRIGGER_EMOJI = 'eyes';
 
@@ -83,7 +113,21 @@ app.event('app_mention', async ({ event, client, logger }) => {
     text: '확인 중이에요 👀',
   });
 
-  const result = await runClaude(text);
+  // 스레드 안 멘션이면 이전 대화를 읽어 맥락으로 넘긴다("좀 더 자세하게" 같은 후속 요청 이해).
+  // 이번 멘션과 방금 단 placeholder는 맥락에서 제외한다.
+  let context = '';
+  try {
+    context = await buildThreadContext(client, event.channel, threadTs, [event.ts, placeholder.ts as string]);
+  } catch (e) {
+    logger.warn(`[mention] 스레드 맥락 읽기 실패(맥락 없이 진행): ${e instanceof Error ? e.message : e}`);
+  }
+
+  // 이전 대화가 있으면 프롬프트 앞에 붙인다. 없으면(첫 멘션) 이번 요청만 넘겨 기존과 동일하게 동작.
+  const prompt = context
+    ? `아래는 이 슬랙 스레드의 이전 대화다. 사용자의 새 요청은 이 맥락을 이어받은 것이니 참고해서 답해라.\n\n<이전 대화>\n${context}\n</이전 대화>\n\n<새 요청>\n${text}\n</새 요청>`
+    : text;
+
+  const result = await runClaude(prompt);
 
   if (!result.ok) {
     await client.chat.update({
