@@ -54,7 +54,7 @@ app.error(async (err) => {
   console.error('[app.error]', err);
 });
 
-// 1) 멘션: @로지스비 ... → claude CLI에 위임해 스킬(grafana-logs 등)로 답변
+// 1) 멘션: @로대리 ... → claude CLI에 위임해 스킬(rodaeri-loki 등)로 답변
 app.event('app_mention', async ({ event, client, logger }) => {
   const text = event.text.replace(/<@[A-Z0-9]+(\|[^>]+)?>/g, '').trim(); // <@U123> / <@U123|name> 모두 제거
   const threadTs = event.thread_ts ?? event.ts;

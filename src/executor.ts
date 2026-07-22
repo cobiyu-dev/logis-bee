@@ -1,5 +1,5 @@
 // Claude CLI 실행기 — 사용자 질문을 claude CLI에 넘겨 스킬을 자율 실행시킨다.
-// cwd를 이 프로젝트 루트로 지정하므로 .claude/skills/의 grafana-logs 스킬이 자동 로드된다.
+// cwd를 이 프로젝트 루트로 지정하므로 .claude/skills/의 rodaeri-loki 스킬이 자동 로드된다.
 // claude가 질문을 보고 스킬이 필요한지 스스로 판단해 로그를 조회하고 답을 만든다.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

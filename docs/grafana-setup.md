@@ -65,7 +65,7 @@ npm run grafana -- login prod                                   # 세션 강제 
 npm run grafana -- query prod '{app="wms", loglevel="ERROR"}' now-1h now 5000
 ```
 
-Claude Code에서는 "wms 에러 로그 조회해줘"처럼 말하면 `grafana-logs` 스킬이 위 명령을 대신 실행한다.
+Claude Code에서는 "wms 에러 로그 조회해줘"처럼 말하면 `rodaeri-loki` 스킬이 위 명령을 대신 실행한다.
 
 ---
 

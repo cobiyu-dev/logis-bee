@@ -1,4 +1,4 @@
-// Grafana Loki 조회 CLI. Claude 스킬(grafana-logs)이 이 CLI를 호출한다.
+// Grafana Loki 조회 CLI. Claude 스킬(rodaeri-loki)이 이 CLI를 호출한다.
 //
 // 사용법:
 //   npm run grafana -- check [prod|alpha]
