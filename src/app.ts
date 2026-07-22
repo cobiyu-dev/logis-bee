@@ -39,6 +39,23 @@ async function buildThreadContext(
   return lines.join('\n\n');
 }
 
+/**
+ * 멘션한 사람의 직함·표시이름을 읽어, claude가 답변 눈높이를 맞추도록 넘길 한 줄 컨텍스트를 만든다.
+ * 사내 프로필의 title/display_name에 소속 파트가 드러난다(예: "배송&물류BE파트 매니저", "물류기획팀 팀장").
+ * 개발 직군(BE/FE 등)이면 기술적 깊이를, 물류 기획·운영 직군이면 실무 관점을 우선하라는 판단은 claude에게 맡긴다.
+ * 조회 실패나 정보 없음이면 빈 문자열 → 직군 힌트 없이 평소대로 답한다.
+ */
+async function buildRequesterContext(client: App['client'], userId: string | undefined): Promise<string> {
+  if (!userId) return '';
+  const res = await client.users.info({ user: userId });
+  const p = res.user?.profile;
+  const title = p?.title?.trim();
+  const display = p?.display_name?.trim();
+  if (!title && !display) return '';
+  const parts = [display && `표시이름: ${display}`, title && `직함: ${title}`].filter(Boolean);
+  return parts.join(', ');
+}
+
 // 이모지 트리거(👀). 오더비 등 다른 봇과 겹치지 않게. 바꾸려면 이 줄만 수정.
 const TRIGGER_EMOJI = 'eyes';
 
@@ -85,10 +102,31 @@ app.event('app_mention', async ({ event, client, logger }) => {
     logger.warn(`[mention] 스레드 맥락 읽기 실패(맥락 없이 진행): ${e instanceof Error ? e.message : e}`);
   }
 
-  // 이전 대화가 있으면 프롬프트 앞에 붙인다. 없으면(첫 멘션) 이번 요청만 넘겨 기존과 동일하게 동작.
-  const prompt = context
-    ? `아래는 이 슬랙 스레드의 이전 대화다. 사용자의 새 요청은 이 맥락을 이어받은 것이니 참고해서 답해라.\n\n<이전 대화>\n${context}\n</이전 대화>\n\n<새 요청>\n${text}\n</새 요청>`
-    : text;
+  // 멘션한 사람의 직군을 읽어 답변 눈높이를 맞추게 한다. 조회 실패는 삼키고 힌트 없이 진행.
+  let requester = '';
+  try {
+    requester = await buildRequesterContext(client, event.user);
+  } catch (e) {
+    logger.warn(`[mention] 질문자 프로필 읽기 실패(직군 힌트 없이 진행): ${e instanceof Error ? e.message : e}`);
+  }
+
+  // 프롬프트 조립: 직군 힌트 → 이전 대화 → 새 요청 순. 없는 조각은 건너뛴다.
+  const sections: string[] = [];
+  if (requester) {
+    sections.push(
+      `이 질문을 한 사람의 사내 프로필이다. 이 사람의 직군에 맞춰 답변 눈높이를 조절해라. ` +
+        `개발 직군(백엔드/프론트엔드/시스템 등)이면 기술적 깊이를 조금 더 섞고, ` +
+        `물류 기획·운영처럼 비개발 직군이면 물류 실무에 밀접한 관점으로 쉽게 설명해라. ` +
+        `애매하면 실무 관점을 기본으로 한다.\n<질문자>\n${requester}\n</질문자>`,
+    );
+  }
+  if (context) {
+    sections.push(
+      `아래는 이 슬랙 스레드의 이전 대화다. 사용자의 새 요청은 이 맥락을 이어받은 것이니 참고해서 답해라.\n<이전 대화>\n${context}\n</이전 대화>`,
+    );
+  }
+  sections.push(context || requester ? `<새 요청>\n${text}\n</새 요청>` : text);
+  const prompt = sections.join('\n\n');
 
   const result = await runClaude(prompt);
 
