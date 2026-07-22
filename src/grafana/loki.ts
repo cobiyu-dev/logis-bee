@@ -77,3 +77,4 @@ export function extractLines(result: any): string[] {
   }
   return out;
 }
+
