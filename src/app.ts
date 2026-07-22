@@ -13,7 +13,7 @@ function required(name: string): string {
  * 스레드의 이전 대화를 읽어 claude에게 넘길 맥락 문자열로 만든다.
  * "좀 더 자세하게" 같은 후속 멘션은 앞 대화를 알아야 뜻이 통하므로, 스레드 전체를 시간순으로 넘긴다.
  *
- * - `excludeTs`(이번 멘션, 방금 단 placeholder)는 중복·잡음이라 뺀다.
+ * - `excludeTs`(이번 멘션)는 중복·잡음이라 뺀다.
  * - 봇 메시지(`bot_id` 있음)는 "로지스비", 사람은 "사용자"로 라벨링해 누가 무슨 말을 했는지 구분한다.
  * - 봇이 이전에 보낸 blocks JSON/텍스트도 원문 그대로 넣어, claude가 자기가 뭘 답했는지 알고 이어가게 한다.
  * 이전 메시지가 없으면(첫 멘션) 빈 문자열 → 호출부에서 맥락 없이 이번 요청만 넘긴다.
@@ -42,6 +42,10 @@ async function buildThreadContext(
 // 이모지 트리거(👀). 오더비 등 다른 봇과 겹치지 않게. 바꾸려면 이 줄만 수정.
 const TRIGGER_EMOJI = 'eyes';
 
+// 멘션 처리 중임을 태그된 원본 메시지에 표시하는 로딩 이모지. 완료되면 뗀다.
+// 워크스페이스에 등록된 커스텀 이모지 이름(콜론 없이).
+const LOADING_EMOJI = process.env.LOADING_EMOJI ?? 'loading2';
+
 const app = new App({
   token: required('SLACK_BOT_TOKEN'), // xoxb-
   appToken: required('SLACK_APP_TOKEN'), // xapp-
@@ -65,18 +69,18 @@ app.event('app_mention', async ({ event, client, logger }) => {
     return;
   }
 
-  // 처리에 수십 초 걸리므로, 먼저 임시 메시지를 달고 완료 시 그 메시지를 교체한다.
-  const placeholder = await client.chat.postMessage({
-    channel: event.channel,
-    thread_ts: threadTs,
-    text: '확인 중이에요 👀',
-  });
+  // 처리에 수십 초 걸린다. 임시 메시지를 보내 교체하는 대신, 태그한 원본 메시지에
+  // loading 이모지를 달아 "처리 중"임을 표시하고, 완료되면 답변을 새 메시지로 보낸 뒤
+  // 이모지를 뗀다. (이모지가 안 달려도 답변 흐름은 그대로 진행하도록 실패를 삼킨다.)
+  await client.reactions
+    .add({ channel: event.channel, timestamp: event.ts, name: LOADING_EMOJI })
+    .catch((e) => logger.warn(`[mention] 로딩 이모지 부착 실패(무시): ${e instanceof Error ? e.message : e}`));
 
   // 스레드 안 멘션이면 이전 대화를 읽어 맥락으로 넘긴다("좀 더 자세하게" 같은 후속 요청 이해).
-  // 이번 멘션과 방금 단 placeholder는 맥락에서 제외한다.
+  // 이번 멘션은 맥락에서 제외한다.
   let context = '';
   try {
-    context = await buildThreadContext(client, event.channel, threadTs, [event.ts, placeholder.ts as string]);
+    context = await buildThreadContext(client, event.channel, threadTs, [event.ts]);
   } catch (e) {
     logger.warn(`[mention] 스레드 맥락 읽기 실패(맥락 없이 진행): ${e instanceof Error ? e.message : e}`);
   }
@@ -89,22 +93,26 @@ app.event('app_mention', async ({ event, client, logger }) => {
   const result = await runClaude(prompt);
 
   if (!result.ok) {
-    await client.chat.update({
+    await client.chat.postMessage({
       channel: event.channel,
-      ts: placeholder.ts as string,
+      thread_ts: threadTs,
       text: `처리 중 오류가 발생했어요.\n\`\`\`${result.error}\`\`\``,
     });
-    return;
+  } else {
+    // claude가 slack-format 스킬로 blocks JSON을 냈으면 blocks로, 아니면 text로 전송.
+    const msg = toSlackMessage(result.output);
+    await client.chat.postMessage({
+      channel: event.channel,
+      thread_ts: threadTs,
+      text: msg.text, // blocks가 있어도 알림용 폴백으로 항상 필요
+      blocks: msg.blocks,
+    });
   }
 
-  // claude가 slack-format 스킬로 blocks JSON을 냈으면 blocks로, 아니면 text로 전송.
-  const msg = toSlackMessage(result.output);
-  await client.chat.update({
-    channel: event.channel,
-    ts: placeholder.ts as string,
-    text: msg.text, // blocks가 있어도 알림용 폴백으로 항상 필요
-    blocks: msg.blocks,
-  });
+  // 성공·실패와 무관하게 로딩 이모지를 뗀다.
+  await client.reactions
+    .remove({ channel: event.channel, timestamp: event.ts, name: LOADING_EMOJI })
+    .catch((e) => logger.warn(`[mention] 로딩 이모지 제거 실패(무시): ${e instanceof Error ? e.message : e}`));
 });
 
 // 2) 이모지 리액션: TRIGGER_EMOJI 하나에만 반응
