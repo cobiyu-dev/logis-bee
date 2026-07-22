@@ -33,7 +33,9 @@ export function runClaude(prompt: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promi
     const child = spawn(
       CLAUDE_COMMAND,
       ['--print', SKIP_PERMISSIONS_FLAG, '--model', CLAUDE_MODEL, prompt + SLACK_FORMAT_INSTRUCTION],
-      { cwd: PROJECT_ROOT },
+      // stdin을 'ignore'로 닫는다. 안 그러면 claude CLI가 파이프 환경에서 stdin 입력을 기다리다
+      // "no stdin data received" 경고를 내고 그게 출력에 섞여 실패로 처리된다(프롬프트는 인자로 넘긴다).
+      { cwd: PROJECT_ROOT, stdio: ['ignore', 'pipe', 'pipe'] },
     );
 
     let stdout = '';

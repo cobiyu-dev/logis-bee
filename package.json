@@ -8,11 +8,13 @@
     "dev": "tsx watch src/app.ts",
     "start": "tsx src/app.ts",
     "grafana": "tsx src/grafana/cli.ts",
+    "briefing": "tsx src/briefing-run.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/grafana/*.test.ts"
   },
   "dependencies": {
     "@slack/bolt": "^4",
+    "node-cron": "^4.6.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {
