@@ -3,3 +3,10 @@ set-tokens.sh
 node_modules/
 *.log
 .DS_Store
+.idea/
+# n8n 워크플로 조사·수정 작업 파일 (kakaostyle-n8n-ops 스킬이 만든다)
+wf.json
+wf_put.json
+wf_ref.json
+wf_verify.json
+wf.backup.json

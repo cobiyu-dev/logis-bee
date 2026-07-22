@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "kakaostyle-mcp-alpha-notion": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://public.dev.alpha.zigzag.in/api/public/ai/mcp/saas.notion"
+      ]
+    }
+  }
+}
