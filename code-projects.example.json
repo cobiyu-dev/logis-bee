@@ -1,0 +1,12 @@
+[
+  {
+    "name": "wms",
+    "path": "/absolute/path/to/wms",
+    "description": "창고관리 시스템(WMS) 백엔드. wms-api / wms-core / wms-batch 등 멀티모듈."
+  },
+  {
+    "name": "logistics-auth",
+    "path": "/absolute/path/to/logistics-auth",
+    "description": "물류 인증 서비스. auth-api / auth-batch / auth-core."
+  }
+]

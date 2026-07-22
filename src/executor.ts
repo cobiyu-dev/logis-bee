@@ -25,14 +25,26 @@ export interface ClaudeResult {
   error: string;
 }
 
+export interface RunClaudeOpts {
+  timeoutMs?: number;
+  /** claude가 읽도록 추가로 허용할 디렉토리(절대경로). --add-dir로 넘어간다. 이 화이트리스트 밖은 접근 불가. */
+  extraDirs?: string[];
+}
+
 /**
  * claude CLI를 비대화형(--print)으로 실행한다. API 토큰 불필요 — CLI 자체 인증 사용.
+ * extraDirs를 주면 --add-dir로 그 디렉토리들의 파일을 읽을 수 있게 허용한다(cwd는 스킬 로드용으로 유지).
  */
-export function runClaude(prompt: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<ClaudeResult> {
+export function runClaude(prompt: string, opts: RunClaudeOpts = {}): Promise<ClaudeResult> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // --add-dir는 <directories...> 가변인자라, 뒤에 오는 프롬프트 위치 인자까지 삼킨다.
+  // 그래서 --add-dir 쌍들을 앞에 두고, 그 뒤에 값을 받는 --model을 둬서 가변인자를 끊은 다음
+  // 마지막에 프롬프트를 놓는다. (--add-dir ... --model X <prompt> 순서라야 프롬프트가 안 먹힌다.)
+  const addDirArgs = (opts.extraDirs ?? []).flatMap((d) => ['--add-dir', d]);
   return new Promise((resolve) => {
     const child = spawn(
       CLAUDE_COMMAND,
-      ['--print', SKIP_PERMISSIONS_FLAG, '--model', CLAUDE_MODEL, prompt + SLACK_FORMAT_INSTRUCTION],
+      ['--print', SKIP_PERMISSIONS_FLAG, ...addDirArgs, '--model', CLAUDE_MODEL, prompt + SLACK_FORMAT_INSTRUCTION],
       // stdin을 'ignore'로 닫는다. 안 그러면 claude CLI가 파이프 환경에서 stdin 입력을 기다리다
       // "no stdin data received" 경고를 내고 그게 출력에 섞여 실패로 처리된다(프롬프트는 인자로 넘긴다).
       { cwd: PROJECT_ROOT, stdio: ['ignore', 'pipe', 'pipe'] },

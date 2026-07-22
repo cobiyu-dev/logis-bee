@@ -1,5 +1,7 @@
 .env
 set-tokens.sh
+# 개인 PC 절대경로가 담긴다. code-projects.example.json만 커밋한다.
+code-projects.json
 node_modules/
 *.log
 .DS_Store

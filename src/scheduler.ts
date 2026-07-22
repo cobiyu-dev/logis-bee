@@ -50,7 +50,7 @@ function buildBriefingPrompt(notionDb: string): string {
  */
 async function runBriefingOnce(client: App['client'], channel: string, notionDb: string): Promise<void> {
   console.log(`[briefing] 시작 — channel=${channel}`);
-  const result = await runClaude(buildBriefingPrompt(notionDb), briefingTimeoutMs());
+  const result = await runClaude(buildBriefingPrompt(notionDb), { timeoutMs: briefingTimeoutMs() });
 
   if (!result.ok) {
     console.error(`[briefing] 실패: ${result.error}`);

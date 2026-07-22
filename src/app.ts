@@ -2,6 +2,7 @@ import { App, LogLevel } from '@slack/bolt';
 import { runClaude } from './executor.js';
 import { toSlackMessage } from './slack-message.js';
 import { startScheduler } from './scheduler.js';
+import { buildProjectsContext, loadCodeProjects } from './code-projects.js';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -110,8 +111,15 @@ app.event('app_mention', async ({ event, client, logger }) => {
     logger.warn(`[mention] 질문자 프로필 읽기 실패(직군 힌트 없이 진행): ${e instanceof Error ? e.message : e}`);
   }
 
-  // 프롬프트 조립: 직군 힌트 → 이전 대화 → 새 요청 순. 없는 조각은 건너뛴다.
+  // 읽을 수 있는 사내 프로젝트 목록. 멘션마다 로드해 파일 수정·경로 존재를 매번 반영한다.
+  const projects = loadCodeProjects();
+  const projectsContext = buildProjectsContext(projects);
+
+  // 프롬프트 조립: 프로젝트 안내 → 직군 힌트 → 이전 대화 → 새 요청 순. 없는 조각은 건너뛴다.
   const sections: string[] = [];
+  if (projectsContext) {
+    sections.push(projectsContext);
+  }
   if (requester) {
     sections.push(
       `이 질문을 한 사람의 사내 프로필이다. 직함·표시이름의 소속 파트를 보고 아래 세 직군 중 하나로 판단해, 답변 눈높이를 맞춰라.\n` +
@@ -126,10 +134,11 @@ app.event('app_mention', async ({ event, client, logger }) => {
       `아래는 이 슬랙 스레드의 이전 대화다. 사용자의 새 요청은 이 맥락을 이어받은 것이니 참고해서 답해라.\n<이전 대화>\n${context}\n</이전 대화>`,
     );
   }
-  sections.push(context || requester ? `<새 요청>\n${text}\n</새 요청>` : text);
+  sections.push(sections.length > 0 ? `<새 요청>\n${text}\n</새 요청>` : text);
   const prompt = sections.join('\n\n');
 
-  const result = await runClaude(prompt);
+  // 등록된 프로젝트 경로를 --add-dir로 열어 claude가 소스를 읽게 한다(유도용 — 물리적 차단은 아님).
+  const result = await runClaude(prompt, { extraDirs: projects.map((p) => p.path) });
 
   if (!result.ok) {
     await client.chat.postMessage({
