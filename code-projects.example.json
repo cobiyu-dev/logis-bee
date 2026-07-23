@@ -2,11 +2,31 @@
   {
     "name": "wms",
     "path": "/absolute/path/to/wms",
-    "description": "창고관리 시스템(WMS) 백엔드. wms-api / wms-core / wms-batch 등 멀티모듈."
+    "description": "창고관리 시스템(WMS) 백엔드. 물류센터에서 일어나는 모든 공정들을 관리하는 백엔드 서비스. wms-fe라는 프론트엔드 서비스와 연동되어 물류센터 사용하는 모든 PC화면 PDA화면의 기능을 제공한다. api모듈, batch모듈이 함께 들어있다. OMS와 실적을 주고받으며 양 시스템의 재고를 동기화한다."
+  },
+  {
+    "name": "wms-fe",
+    "path": "/absolute/path/to/wms",
+    "description": "물류센터 사용하는 모든 PC화면 PDA화면을 관리하는 WMS 프론트엔드 서비스. 모든 기능은 wms와 연동된다. 많은 서비스들이 함꼐 들어있는 repository이며 wms-fe는 admin-web 중 serve:wms 관련 부분만 본다. package.json의 serve:wms를 이용해서 wms FE 서비스를 구동시킨다."
+  },
+  {
+    "name": "logistics-wms-3pl",
+    "path": "/absolute/path/to/wms",
+    "description": "3PL(3자물류) WMS 서비스. wms와 동일하게 물류센터 일어나는 모든공정을 관리하는 서비스이지만 3pl 물류만을 취급한다. wms프로젝트와 비슷한 구조이지만 3pl로 지정된 상품들만 wms 3pl을 이용하며 세부적인 동작이 다르다. api모듈, batch모듈이 함께 들어있다."
   },
   {
     "name": "logistics-auth",
-    "path": "/absolute/path/to/logistics-auth",
-    "description": "물류 인증 서비스. auth-api / auth-batch / auth-core."
+    "path": "/absolute/path/to/wms",
+    "description": "물류 인증 서비스. wms의 인증 및 user마다 가지고있는 권한 시스템을 관리하는 시스템이다."
+  },
+  {
+    "name": "oms",
+    "path": "/absolute/path/to/wms",
+    "description": "OMS라는 프로젝트로 주문과 물류센터 사이의 연결고리를 하는 시스템이며 주문·출고·반품·정산 등 물류 전반의 비즈니스 로직을 담당한다. 주문 접수 → 재고 확인 → 출고 → 배송 → 반품/클레임 → 정산까지 물류 전 과정의 핵심 비즈니스 흐름을 처리한다. 1센터와 2센터, 3센터의 물류센터에서 일어나는 모든 공정들의 실적을 주고받아서 파트너에게 물류관련 기능들을 제공한다. 실적은 kafka consumer(wms, wms-3pl과 연동) or api(외부 CJ 대한통운과 연동) 형태로 받는다. api, kafka-consumer, batch 모듈이 있다."
+  },
+  {
+    "name": "logistics-shipment",
+    "path": "/absolute/path/to/wms",
+    "description": "OMS에서 관리하는 프로젝트로 배송 관련된 기능들을 관리하는 백엔드 서비스입니다."
   }
 ]
