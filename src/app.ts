@@ -3,6 +3,7 @@ import { runClaude } from './executor.js';
 import { toSlackMessage } from './slack-message.js';
 import { startScheduler } from './scheduler.js';
 import { buildProjectsContext, loadCodeProjects } from './code-projects.js';
+import { syncProjects } from './git-sync.js';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -15,7 +16,7 @@ function required(name: string): string {
  * "좀 더 자세하게" 같은 후속 멘션은 앞 대화를 알아야 뜻이 통하므로, 스레드 전체를 시간순으로 넘긴다.
  *
  * - `excludeTs`(이번 멘션)는 중복·잡음이라 뺀다.
- * - 봇 메시지(`bot_id` 있음)는 "로지스비", 사람은 "사용자"로 라벨링해 누가 무슨 말을 했는지 구분한다.
+ * - 봇 메시지(`bot_id` 있음)는 "로대리", 사람은 "사용자"로 라벨링해 누가 무슨 말을 했는지 구분한다.
  * - 봇이 이전에 보낸 blocks JSON/텍스트도 원문 그대로 넣어, claude가 자기가 뭘 답했는지 알고 이어가게 한다.
  * 이전 메시지가 없으면(첫 멘션) 빈 문자열 → 호출부에서 맥락 없이 이번 요청만 넘긴다.
  */
@@ -34,7 +35,7 @@ async function buildThreadContext(
     if (m.ts && skip.has(m.ts)) continue;
     const body = (m.text ?? '').trim();
     if (!body) continue;
-    const who = m.bot_id ? '로지스비(너의 이전 답변)' : '사용자';
+    const who = m.bot_id ? '로대리(너의 이전 답변)' : '사용자';
     lines.push(`[${who}]\n${body}`);
   }
   return lines.join('\n\n');
@@ -115,10 +116,26 @@ app.event('app_mention', async ({ event, client, logger }) => {
   const projects = loadCodeProjects();
   const projectsContext = buildProjectsContext(projects);
 
-  // 프롬프트 조립: 프로젝트 안내 → 직군 힌트 → 이전 대화 → 새 요청 순. 없는 조각은 건너뛴다.
+  // 코드를 읽기 전에 각 프로젝트를 remote main 최신으로 맞춘다(CODE_SYNC=1일 때만 동작).
+  // 실패해도 답변은 진행 — 최신화 여부·결과는 프롬프트로 claude에 알려 감안하게 한다.
+  let syncContext = '';
+  try {
+    const sync = await syncProjects(projects);
+    syncContext = sync.context;
+    if (sync.results.length > 0) {
+      logger.info(`[mention] 코드 최신화: ${sync.results.map((r) => `${r.name}=${r.status}`).join(', ')}`);
+    }
+  } catch (e) {
+    logger.warn(`[mention] 코드 최신화 실패(그대로 진행): ${e instanceof Error ? e.message : e}`);
+  }
+
+  // 프롬프트 조립: 프로젝트 안내 → 최신화 결과 → 직군 힌트 → 이전 대화 → 새 요청 순. 없는 조각은 건너뛴다.
   const sections: string[] = [];
   if (projectsContext) {
     sections.push(projectsContext);
+  }
+  if (syncContext) {
+    sections.push(syncContext);
   }
   if (requester) {
     sections.push(

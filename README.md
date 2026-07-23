@@ -1,10 +1,10 @@
-# 로지스비 — Slack 이벤트 수신 테스트
+# 로대리 — Slack 이벤트 수신 테스트
 
-Slack 봇(로지스비)을 멘션/이모지/DM으로 트리거하면, 내 PC가 **Socket Mode WebSocket**으로 그 이벤트를 받아 콘솔에 찍고 스레드에 echo 답글을 다는 최소 테스트 프로젝트다.
+Slack 봇(로대리)을 멘션/이모지/DM으로 트리거하면, 내 PC가 **Socket Mode WebSocket**으로 그 이벤트를 받아 콘솔에 찍고 스레드에 echo 답글을 다는 최소 테스트 프로젝트다.
 
 목적은 단 하나 — **"PC가 Slack 이벤트를 실제로 받을 수 있는지" 검증**. Claude 연동, 분석, 워커 풀 등은 다음 단계로 미룬다.
 
-> 봇 이름 "로지스비"는 언제든 바꿔도 된다. 코드는 봇 이름에 의존하지 않는다(멘션은 앱 고유 user ID로 들어옴).
+> 봇 이름 "로대리"는 언제든 바꿔도 된다. 코드는 봇 이름에 의존하지 않는다(멘션은 앱 고유 user ID로 들어옴).
 
 ## 동작 원리
 
@@ -12,7 +12,7 @@ PC가 Slack으로 **나가는** WebSocket 연결을 연다(Socket Mode). 공개 
 
 받는 이벤트 3종:
 
-- `app_mention` — `@로지스비 ...` 멘션
+- `app_mention` — `@로대리 ...` 멘션
 - `reaction_added` — 메시지에 👀(`eyes`) 리액션 (트리거 이모지는 `src/app.ts`의 `TRIGGER_EMOJI` 상수)
 - `message` — DM 및 채널 메시지
 
@@ -20,7 +20,7 @@ PC가 Slack으로 **나가는** WebSocket 연결을 연다(Socket Mode). 공개 
 
 본인 소유의 새 앱을 발급한다.
 
-1. https://api.slack.com/apps → **Create New App** → From scratch → 이름 `로지스비`, 워크스페이스 선택
+1. https://api.slack.com/apps → **Create New App** → From scratch → 이름 `로대리`, 워크스페이스 선택
 2. **Socket Mode** (좌측 메뉴) → 활성화 → App-Level Token 생성(스코프 `connections:write`) → 토큰 `xapp-...` 복사
 3. **Event Subscriptions** → Enable → *Subscribe to bot events*에 추가:
    - `app_mention`
@@ -34,7 +34,7 @@ PC가 Slack으로 **나가는** WebSocket 연결을 연다(Socket Mode). 공개 
    - `im:history`
    - `chat:write`
 5. **Install to Workspace** → 설치 → Bot User OAuth Token `xoxb-...` 복사
-6. 테스트 채널에서 봇 초대: `/invite @로지스비`
+6. 테스트 채널에서 봇 초대: `/invite @로대리`
 
 > 충돌 주의: 같은 워크스페이스에 다른 봇(오더비 등)이 있으면, `src/app.ts`의 `TRIGGER_EMOJI`를 그 봇들이 쓰지 않는 이모지로 둔다(기본 `eyes`). 멘션은 앱마다 user ID가 달라 자동으로 구분된다.
 
@@ -67,7 +67,7 @@ npm run dev      # tsx watch — 파일 저장 시 자동 재시작
 | # | 동작 | 기대 결과 |
 |---|------|-----------|
 | 1 | `npm run dev` | 콘솔에 "Now connected to Slack" + "⚡️ ... 대기 중" |
-| 2 | `@로지스비 안녕` 멘션 | 콘솔 `[mention] ... text=안녕` + 스레드에 echo 답글 |
+| 2 | `@로대리 안녕` 멘션 | 콘솔 `[mention] ... text=안녕` + 스레드에 echo 답글 |
 | 3 | 채널에 일반 메시지(멘션 X) | 콘솔 `[message] ...` 로그 (echo는 없음) |
 | 4 | 메시지에 👀 리액션 | 콘솔 `[reaction] ... emoji=eyes` + echo |
 | 5 | 👀가 아닌 다른 이모지 리액션 | `[reaction]` 로그 안 찍힘 (트리거 필터 동작) |

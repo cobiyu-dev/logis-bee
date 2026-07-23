@@ -1,5 +1,5 @@
 {
-  "name": "logisbi-slack-test",
+  "name": "lodaeri-slack-test",
   "version": "0.1.0",
   "description": "Slack 이벤트 수신 테스트 (Socket Mode)",
   "private": true,

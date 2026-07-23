@@ -11,7 +11,7 @@ export type GrafanaEnv = 'prod' | 'alpha';
 export const ROOT_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
 /** PC 로컬 상태 디렉토리 — 세션 파일, 전용 Chrome 프로필. PC마다 자기 홈 아래. */
-export const STATE_DIR = process.env.LOGISBI_STATE_DIR ?? path.join(os.homedir(), '.logisbi');
+export const STATE_DIR = process.env.LODAERI_STATE_DIR ?? path.join(os.homedir(), '.lodaeri');
 export const CHROME_PROFILE_DIR = path.join(STATE_DIR, 'chrome-profile');
 
 /** 전용 CDP 포트. 다른 CDP Chrome(9222 등)과 충돌하지 않게 기본 9223. */
