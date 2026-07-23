@@ -160,10 +160,12 @@ app.event('app_mention', async ({ event, client, logger }) => {
   const result = await runClaude(prompt, { extraDirs: projects.map((p) => p.path) });
 
   if (!result.ok) {
+    // error 문자열은 사용자에게 그대로 보여줄 안내문이다(executor에서 친절히 작성). 코드블록으로
+    // 감싸지 않고 일반 텍스트로 보내 여러 줄 안내가 잘 읽히게 한다.
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: threadTs,
-      text: `처리 중 오류가 발생했어요.\n\`\`\`${result.error}\`\`\``,
+      text: result.error,
     });
   } else {
     // claude가 slack-format 스킬로 blocks JSON을 냈으면 blocks로, 아니면 text로 전송.

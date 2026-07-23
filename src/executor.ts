@@ -9,7 +9,7 @@ const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const CLAUDE_COMMAND = process.env.CLAUDE_COMMAND ?? 'claude';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? 'sonnet';
-const DEFAULT_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? '300000'); // 5분
+const DEFAULT_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS ?? '600000'); // 10분
 
 // 봇이 사람 확인 없이 스킬(Bash 등)을 실행하도록 권한 확인을 건너뛴다 (오더비 run_claude와 동일).
 const SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
@@ -57,7 +57,19 @@ export function runClaude(prompt: string, opts: RunClaudeOpts = {}): Promise<Cla
 
     const timer = setTimeout(() => {
       child.kill();
-      resolve({ ok: false, output: stdout, error: `타임아웃 (${timeoutMs}ms 초과)` });
+      const minutes = Math.round(timeoutMs / 60000);
+      // app.ts가 이 문자열을 사용자에게 그대로 보여준다. 실패 사실만 던지지 말고,
+      // 왜 오래 걸렸는지와 다음에 어떻게 하면 좋은지를 친절히 안내한다.
+      resolve({
+        ok: false,
+        output: stdout,
+        error:
+          `답변을 만드는 데 ${minutes}분을 넘겨서 중간에 멈췄어요. 조회 범위가 넓거나 여러 단계를 거치는 무거운 요청일 때 이렇게 됩니다.\n` +
+          `이렇게 해보시면 도움이 돼요:\n` +
+          `· 대상을 좁혀서 다시 요청해 주세요 (예: 기간·센터·건수를 줄이거나, 한 번에 한 가지만).\n` +
+          `· 원하는 결과와 조건을 구체적으로 적어 주시면 한 번에 끝낼 확률이 올라가요 (예: "센터5, 가용재고>0, 상위 10건만").\n` +
+          `· 정말 오래 걸리는 작업이면 잠시 후 다시 시도해 주세요.`,
+      });
     }, timeoutMs);
 
     child.on('error', (e) => {

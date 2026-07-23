@@ -25,19 +25,40 @@ export function toSlackMessage(raw: string): { text: string; blocks?: KnownBlock
 
 /**
  * 문자열에서 {text, blocks} 형태의 JSON 객체를 뽑아낸다. 못 찾으면 null.
- * 첫 '{'부터 마지막 '}'까지 잘라 파싱을 시도한다(가장 바깥 객체). 이러면 앞뒤 잡담·코드펜스를 걷어낸다.
+ *
+ * 후보를 두 가지 방식으로 만들어 순서대로 파싱을 시도한다:
+ *  1) ```json ... ``` (또는 그냥 ``` ... ```) 코드펜스 안의 내용. claude가 답을 펜스로 감싸는 일이
+ *     잦은데, 펜스는 JSON의 경계가 명확해 가장 믿을 만하다.
+ *  2) 첫 '{'부터 마지막 '}'까지. 펜스가 없을 때의 폴백.
+ *
+ * 예전엔 2)만 썼는데, JSON 앞뒤 설명 문장에 '{'나 '}'가 하나라도 있으면(예: SQL의 {col})
+ * 자르는 범위가 어긋나 파싱이 깨졌다. 그래서 펜스 우선으로 바꿨다.
  */
 function extractBlocksJson(s: string): { text?: unknown; blocks?: unknown } | null {
+  const candidates: string[] = [];
+
+  // 1) 코드펜스 내부(언어 태그 json/JSON 유무 무관). 여러 펜스가 있으면 전부 후보에 넣는다.
+  const fence = /```(?:json)?\s*\n?([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = fence.exec(s)) !== null) {
+    if (m[1]?.trim()) candidates.push(m[1].trim());
+  }
+
+  // 2) 첫 '{' ~ 마지막 '}' (펜스가 없거나 펜스 파싱이 다 실패했을 때의 폴백)
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
-  if (start === -1 || end <= start) return null;
-  try {
-    const obj = JSON.parse(s.slice(start, end + 1)) as { text?: unknown; blocks?: unknown };
-    // text나 blocks 중 하나라도 있어야 slack-format 응답으로 인정 (엉뚱한 JSON 방어)
-    if (typeof obj !== 'object' || obj === null) return null;
-    if (!('text' in obj) && !('blocks' in obj)) return null;
-    return obj;
-  } catch {
-    return null;
+  if (start !== -1 && end > start) candidates.push(s.slice(start, end + 1));
+
+  for (const c of candidates) {
+    try {
+      const obj = JSON.parse(c) as { text?: unknown; blocks?: unknown };
+      // text나 blocks 중 하나라도 있어야 slack-format 응답으로 인정 (엉뚱한 JSON 방어)
+      if (typeof obj === 'object' && obj !== null && ('text' in obj || 'blocks' in obj)) {
+        return obj;
+      }
+    } catch {
+      // 이 후보는 유효한 JSON이 아님 — 다음 후보로
+    }
   }
+  return null;
 }
