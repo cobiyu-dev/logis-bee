@@ -74,4 +74,5 @@ claude CLI가 프롬프트를 보고 필요한 스킬을 스스로 골라 실행
 - **ESM + `tsx`**: 빌드 단계가 없다. `.ts`를 `tsx`로 직접 실행하고, import는 `.js` 확장자로 쓴다(NodeNext). 산출물이 없으므로 검증은 `npm run typecheck`로 한다.
 - **의도적으로 오더비(orderby) 봇을 참고**: `runClaude`, 스케줄러 등은 사내 오더비 봇의 대응 로직을 이식한 것이다. 주석의 오더비 언급은 설계 출처를 가리킨다.
 - **`.mcp.json`**: Notion MCP(`kakaostyle-mcp-alpha-notion`)를 등록한다. wms-briefing 스킬이 Datadog·Notion MCP를 쓴다.
-- **환경변수로 동작이 갈린다**: `BRIEFING_CHANNEL`이 없으면 스케줄러는 조용히 비활성(봇은 정상). `CLAUDE_MODEL`(기본 sonnet), `CLAUDE_TIMEOUT_MS`(멘션 5분), `BRIEFING_TIMEOUT_MS`(브리핑 25분)로 조정한다. 셸 환경변수가 `.env`보다 우선한다.
+- **환경변수로 동작이 갈린다**: `BRIEFING_CHANNEL`이 없으면 스케줄러는 조용히 비활성(봇은 정상). `CODE_SYNC=1`이면 답변 전 참조 프로젝트를 remote main으로 강제 최신화. `CLAUDE_MODEL`(기본 sonnet), `CLAUDE_TIMEOUT_MS`(멘션 10분), `BRIEFING_TIMEOUT_MS`(브리핑 25분)로 조정한다. 셸 환경변수가 `.env`보다 우선한다.
+- **운영/개발은 별도 Slack 앱으로 분리**: 같은 봇 토큰으로 두 곳에서 띄우면 Slack이 멘션을 두 프로세스에 번갈아 보내 개발 코드가 실제 답변을 가로채고 브리핑이 중복된다. 운영(`로대리`, 상시 실행, `CODE_SYNC=1`)과 개발(`로대리-dev`, 로컬)은 앱·토큰·채널을 나눈다. 절차는 `docs/deploy.md`.
