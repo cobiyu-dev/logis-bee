@@ -69,7 +69,9 @@ const app = new App({
   token: required('SLACK_BOT_TOKEN'), // xoxb-
   appToken: required('SLACK_APP_TOKEN'), // xapp-
   socketMode: true, // Socket Mode = PC가 Slack으로 아웃바운드 WebSocket을 연다
-  logLevel: LogLevel.DEBUG, // 테스트 단계라 상세 로그
+  // INFO 기본. WebSocket 원문까지 보려면 SLACK_LOG_LEVEL=debug로 켠다.
+  // (DEBUG로 두면 채널의 다른 봇 메시지·재시도까지 원문이 쏟아져 [mention] 로그가 묻힌다.)
+  logLevel: process.env.SLACK_LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.INFO,
 });
 
 // 전역 에러 핸들러 — 핸들러/소켓 에러를 콘솔에서 확인
@@ -196,17 +198,16 @@ app.event('reaction_added', async ({ event, client, logger }) => {
 
 // 3) 메시지/DM
 app.event('message', async ({ event, client, logger }) => {
-  if (event.subtype) return; // bot_message 등 → 자기 echo 루프 차단(Bolt ignoreSelf와 이중 방어)
+  // subtype 있는 메시지(bot_message·file_share·message_changed 등)와 봇이 올린 메시지는
+  // 조용히 무시한다. 로그도 남기지 않는다 — 채널의 다른 봇/자기 자신이 올린 파일·알림이
+  // 여기로 쏟아져 로그를 도배하고 echo 루프를 만들 수 있어서다. 우리가 처리할 건 사람이 보낸
+  // 순수 메시지(주로 DM)뿐이다.
+  if (event.subtype || 'bot_id' in event) return;
   // 여기서 event는 GenericMessageEvent로 좁혀짐. text는 optional이라 undefined 가능 → ?? '' 처리
   const text = event.text ?? '';
-  logger.info(`[message] ch=${event.channel} type=${event.channel_type} text=${text}`);
-  if (event.channel_type === 'im') {
-    // DM만 echo (채널 일반 메시지는 로그만)
-    await client.chat.postMessage({
-      channel: event.channel,
-      text: `DM 받았어요 (echo): ${text}`,
-    });
-  }
+  if (event.channel_type !== 'im') return; // 채널 일반 메시지는 관심 없음(멘션으로만 부른다)
+  logger.info(`[message] DM ch=${event.channel} text=${text}`);
+  await client.chat.postMessage({ channel: event.channel, text: `DM 받았어요 (echo): ${text}` });
 });
 
 await app.start(); // top-level await (ESM) — WebSocket 연결 수립
