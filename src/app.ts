@@ -160,6 +160,10 @@ app.event('app_mention', async ({ event, client, logger }) => {
   const result = await runClaude(prompt, { extraDirs: projects.map((p) => p.path) });
 
   if (!result.ok) {
+    // 실패 원인을 봇 로그에 남긴다. claude가 stderr 없이 non-zero로 죽는 일이 있어(종료 코드 1 등),
+    // 사용자에게 보이는 안내문만으론 사후 추적이 안 된다. 죽기 직전 stdout(output)에 힌트가 찍히는
+    // 경우가 많으니 error와 output을 함께 남겨 다음 실패 때 원인을 잡을 수 있게 한다.
+    logger.warn(`[mention] claude 실패: error=${result.error}\noutput(마지막 500자)=${result.output.slice(-500)}`);
     // error 문자열은 사용자에게 그대로 보여줄 안내문이다(executor에서 친절히 작성). 코드블록으로
     // 감싸지 않고 일반 텍스트로 보내 여러 줄 안내가 잘 읽히게 한다.
     await client.chat.postMessage({

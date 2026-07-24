@@ -79,8 +79,14 @@ export function runClaude(prompt: string, opts: RunClaudeOpts = {}): Promise<Cla
 
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve({ ok: true, output: stdout.trim(), error: '' });
-      else resolve({ ok: false, output: stdout.trim(), error: stderr.trim() || `종료 코드 ${code}` });
+      if (code === 0) return resolve({ ok: true, output: stdout.trim(), error: '' });
+      // stderr가 있으면 그대로 쓴다(원인이 명확). 비어 있으면(claude가 stderr 없이 죽는 일이 있다)
+      // 사용자에겐 "종료 코드 1" 같은 기술 메시지 대신, 일시적 오류일 수 있으니 다시 시도하라고 안내한다.
+      // 진짜 원인은 app.ts가 output과 함께 로그에 남긴다.
+      const friendly =
+        '요청을 처리하다 예기치 못하게 멈췄어요. 일시적인 문제일 수 있으니 잠시 후 다시 시도해 주세요.\n' +
+        '계속 같은 증상이면 질문을 조금 더 구체적으로 바꿔서 보내 주시면 도움이 돼요.';
+      resolve({ ok: false, output: stdout.trim(), error: stderr.trim() || friendly });
     });
   });
 }
