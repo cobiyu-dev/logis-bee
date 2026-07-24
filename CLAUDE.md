@@ -1,78 +1,102 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+이 파일은 **로대리**(사내 물류 Slack 봇)가 답을 만들 때 배경으로 읽는 물류 도메인 지식이다.
+`claude --print`가 이 프로젝트 루트에서 실행되므로 이 문서가 자동으로 로드된다.
 
-## 이 프로젝트가 하는 일
+여기엔 **물류 도메인 지식과 프로젝트 맥락만** 담는다. 봇의 아키텍처·명령어·설정·개발 방법은
+`README.md`에 있으니, 봇 코드를 고치는 작업이라면 그쪽을 본다. (로대리가 사용자 질문에 답할 때는
+봇 아키텍처를 알 필요가 없으므로 여기 넣지 않는다.)
 
-"로대리"라는 Slack 봇이다. Socket Mode로 Slack 이벤트를 받아, 사용자의 요청을 **`claude` CLI 서브프로세스에 위임**해 답을 만든다. 봇 자신은 자연어 이해나 로그 분석을 직접 하지 않는다 — 요청을 프롬프트로 감싸 `claude --print`에 넘기고, 그 출력을 Slack 메시지로 변환해 돌려줄 뿐이다. 실제 일(로그 조회, 브리핑 작성, 포맷팅)은 `.claude/skills/`의 스킬들이 한다.
+---
 
-> README.md는 초기 "이벤트 수신 검증" 단계만 서술한다. 프로젝트는 그 뒤로 Claude CLI 위임·스케줄러·Grafana 인증 스택으로 발전했다. 아키텍처는 README가 아니라 이 문서와 코드를 따른다.
+## 시스템 지도
 
-## 명령어
+물류 백엔드는 여러 서비스로 나뉘고, 실적(입·출고 등의 연동 규격)으로 서로 연결된다. 등록된 프로젝트의
+자세한 설명은 `code-projects.json`에 있고, 아래는 로대리가 답할 때 필요한 큰 그림이다.
 
-토큰은 `.env`가 아니라 **셸 환경변수**로 주입한다 (`SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`). `set-tokens.sh.example`을 `set-tokens.sh`로 복사해 `source`하면 편하다. `dev`/`start`는 dotenv를 쓰지 않으므로, 이 두 토큰이 셸에 없으면 즉시 죽는다.
+- **WMS** (`wms`) — 창고관리 백엔드. 물류센터의 모든 공정을 관리한다. `wms-fe`(admin-web)와 연동해
+  센터에서 쓰는 PC 화면과 PDA 화면을 제공한다. api·batch 모듈이 함께 있다. OMS와 실적을 주고받아 재고를 맞춘다.
+- **WMS-FE** (`admin-web`의 `serve:wms` 부분) — WMS 프론트엔드. 센터의 PC·PDA 화면. 모든 기능은 WMS와 연동된다.
+- **3PL WMS** (`logistics-wms-3pl`) — 3PL(3자물류) 전용 WMS. 구조는 WMS와 비슷하나 3PL로 지정된 상품만 취급하고
+  세부 동작이 다르다. api·batch 모듈.
+- **OMS** (`logistics-oms`) — 주문과 물류센터 사이의 연결고리. 주문 접수 → 재고 확인 → 출고 → 배송 →
+  반품/클레임 → 정산까지 물류 전반의 비즈니스 흐름을 담당한다. 여러 센터의 실적을 받아 파트너에게 물류 기능을 제공한다.
+  api·kafka-consumer·batch 모듈.
+- **Shipment** (`logistics-shipment`) — OMS 산하 배송 백엔드.
+- **Auth** (`logistics-auth`) — 물류 인증·권한 시스템. WMS 사용자의 인증과 권한을 관리한다.
 
-```bash
-npm run dev        # tsx watch — 봇 실행 + 파일 저장 시 자동 재시작 (개발용)
-npm start          # tsx src/app.ts — 봇 실행 (재시작 없음)
-npm run typecheck  # tsc --noEmit — 커밋 전 항상 이걸로 확인 (빌드 산출물 없음, noEmit)
-npm test           # node --test — src/grafana/*.test.ts 실행
-npm run briefing   # 모닝 브리핑을 스케줄 대기 없이 즉시 1회 실행 (검증용)
+## 물류센터 (중요)
 
-# Grafana Loki CLI (스킬이 이걸 호출한다. 직접 디버깅에도 씀)
-npm run grafana -- query prod '{app="wms"} |= `"log_level":"ERROR"`' now-1h now 5000
-npm run grafana -- link  prod '<LogQL>' <from> <to>   # Explore deep link만 생성(인증 불필요)
-npm run grafana -- check prod   # 저장 세션 유효성만 확인(rotate 안 함)
-npm run grafana -- login prod   # 강제 브라우저 재로그인(rotate 건너뜀 — 최초 설정·수동 복구용)
-```
+센터는 **centerId로 식별**한다. 통칭하는 센터 번호(1·2·3센터)와 centerId가 다르니 주의한다. 각 센터는
+운영사와 쓰는 시스템이 다르다.
 
-단일 테스트: `node --import tsx --test src/grafana/otp.test.ts` 처럼 파일을 직접 지정한다.
+| 통칭 | centerId | 운영사 | 쓰는 시스템 |
+|------|----------|--------|-------------|
+| 1센터 | **1** | CJ대한통운 | **CJ 자체 시스템 (우리 WMS 아님)** |
+| 2센터 | **5** | 샌드부스터 (이천센터) | WMS (`wms`) |
+| 3센터 | **6** | 샌드부스터 (3PL센터) | 3PL WMS (`logistics-wms-3pl`) |
 
-## 아키텍처
+- **1센터(대한통운)의 창고 공정은 CJ의 자체 시스템이 관리한다. 우리 `wms` 코드에 없다.** 우리 쪽에 있는 건
+  OMS ↔ CJ 시스템 사이의 실적 연동(양방향 API)뿐이다. 그래서 1센터 문의가 오면 우리 WMS 소스를 뒤져도 소용없고,
+  OMS의 실적 연동 접점만 우리 코드로 확인할 수 있다.
+- 2센터와 3센터는 **운영사는 같지만(둘 다 샌드부스터) 쓰는 시스템이 다르다** — 2센터는 일반 WMS, 3센터는 3PL WMS.
+- 질문에 "3센터"나 "3PL"이 나오면 `logistics-wms-3pl` 쪽을 봐야 한다.
 
-### 두 개의 트리거, 하나의 위임 경로
+## OMS ↔ WMS 실적 연동 (핵심 개념)
 
-`npm start`(=`tsx src/app.ts`)는 **한 프로세스**에서 두 가지를 동시에 띄운다.
+**실적**이란 입고 완료·출고 완료 같은 **데이터를 시스템끼리 연동하는 규격**을 말한다. OMS와 WMS는 재고를
+일치시켜야 하는데, **재고를 증감시키는 것도 이 실적으로 연동한다.** 그래서 실적은 이 도메인의 중심 개념이다.
 
-1. **Slack 이벤트 루프** (`src/app.ts`) — 멘션·리액션·DM에 반응. 봇 프로세스가 살아있는 동안만 동작.
-2. **node-cron 스케줄러** (`src/scheduler.ts`) — 같은 프로세스 안의 메모리 타이머. 평일 09:10 KST(`BRIEFING_CRON`)에 모닝 브리핑을 트리거. 별도 프로세스가 아니므로 봇이 죽으면 스케줄도 멈춘다.
+연동 방향과 방식은 센터마다 다르다:
 
-둘 다 최종적으로 같은 경로로 수렴한다: **프롬프트 → `runClaude()` → `toSlackMessage()` → `chat.postMessage`**.
+| 센터 | OMS → WMS | WMS → OMS |
+|------|-----------|-----------|
+| 1센터 (CJ대한통운) | API | API |
+| 2·3센터 (샌드부스터) | API | **Kafka** |
 
-- `src/executor.ts` `runClaude()` — `claude --print --dangerously-skip-permissions --model <CLAUDE_MODEL>`를 spawn한다. cwd를 프로젝트 루트로 잡아 `.claude/skills/`가 자동 로드되게 한다. 프롬프트 끝에 slack-format 지시 한 줄을 항상 덧붙여, claude가 답을 Block Kit JSON으로 내도록 유도한다. **stdin은 반드시 `'ignore'`** — 안 그러면 claude CLI가 stdin을 기다리다 경고를 출력에 섞어 실패한다.
-- `src/slack-message.ts` `toSlackMessage()` — claude 출력에서 가장 바깥 `{...}`를 찾아 `{text, blocks}` JSON을 파싱한다. claude가 코드펜스나 설명 문장을 붙여도 걷어낸다. 유효한 blocks가 없으면 원문을 그대로 text로 쓰는 안전한 폴백이 있다(빈 응답 방지).
+- 즉 **대한통운(1센터)은 양방향 모두 API**, **샌드부스터(2·3센터)는 나가는 방향(WMS→OMS)만 Kafka**다.
+- OMS 쪽 kafka-consumer 모듈이 샌드부스터 센터의 실적을 받는 자리다.
+- 재고가 안 맞는다는 문의가 오면, 이 실적 연동 경로(어느 센터인지 → API인지 Kafka인지)를 먼저 짚어야 한다.
 
-### 멘션 처리의 특징 (`src/app.ts`)
+## 절대 규칙
 
-- **처리 중 표시**: 임시 메시지를 보내 교체하는 방식이 아니라, 태그된 원본 메시지에 `LOADING_EMOJI`(기본 `loading2`) 리액션을 달고, 완료되면 답변을 새 메시지로 보낸 뒤 이모지를 뗀다.
-- **스레드 맥락**: 스레드 안 멘션이면 `conversations.replies`로 이전 대화를 읽어 프롬프트에 넣는다("좀 더 자세하게" 같은 후속 요청 이해).
-- **직군 맞춤 답변**: `users.info`로 질문자의 직함·표시이름을 읽어, 개발자/PO/비개발(물류 기획·운영) 중 어디인지 claude가 판단해 답변 눈높이를 맞추게 한다. `users:read` 스코프 필요.
-- 이모지·프로필 조회 실패는 모두 삼킨다 — 부가 기능 하나 때문에 답변 자체가 막히지 않게.
+- **코드를 절대 수정하지 않는다.** 로대리의 일은 코드를 **읽고** 답하는 것뿐이다. 등록된 프로젝트 소스에
+  파일을 쓰거나, 고치거나, 지우거나, git 상태를 바꾸는 일(커밋·체크아웃·리셋 등)은 어떤 이유로도 하지 않는다.
+  사용자가 "고쳐 달라"고 해도, 코드를 직접 바꾸는 대신 **어디를 어떻게 바꾸면 되는지 설명**으로 답한다.
+- **참조하는 코드는 remote `main` 기준이어야 한다.** 등록된 프로젝트는 모두 `main` 브랜치로 맞춰 두고,
+  봇이 답하기 전에 remote 최신 `main`으로 자동 동기화한다(동기화 결과는 프롬프트로 전달된다). 프롬프트에
+  **최신화에 실패한 프로젝트가 있다고 표시되면**, 그 코드는 최신이 아닐 수 있으니 그 사실을 감안해 답하고,
+  필요하면 답변에 "최신 반영이 안 됐을 수 있다"고 알린다.
 
-### 스킬 (`.claude/skills/`)
+## 오류·온콜 문의 대응
 
-claude CLI가 프롬프트를 보고 필요한 스킬을 스스로 골라 실행한다. 봇 코드는 스킬을 직접 부르지 않는다.
+에러 로그가 붙거나 "왜 안 되냐", 온콜 문의로 로대리를 태그하는 경우다. 추측으로 답하지 말고 아래 순서로 정황을 좁힌다.
 
-- **rodaeri-loki** — Grafana Loki 로그 조회. `src/grafana/`의 CLI(`npm run grafana`)를 호출한다. (이름이 `grafana-logs`인 플러그인 스킬과 겹치지 않게 개명함.)
-- **wms-briefing** — 모닝 브리핑. Grafana(운영·ERROR 관점) + Datadog MCP(성능 관점) + Notion MCP(저장·비교)를 엮는다.
-- **slack-format** — 최종 답변을 Slack Block Kit JSON으로 변환. 위임 경로의 마지막 단계.
+1. **코드가 1차 기준이다.** 먼저 관련 코드를 읽어 원인을 짚는다. 에러 메시지·스택트레이스가 있으면 그게
+   어느 서비스·어느 로직에서 나오는지 소스에서 확인한다. 어느 센터(centerId) 이야기인지도 함께 좁힌다.
+2. **로그로 실제 발생을 확인한다.** 코드만으로 원인이 안 좁혀지면 Grafana Loki 로그(rodaeri-loki 스킬)로
+   실제 에러가 언제·몇 건·어떤 맥락으로 찍혔는지 본다.
+3. **정황이 더 필요하면 databricks로 데이터를 확인한다 (보조 수단).** 실제 데이터 상태(주문·재고·실적 등)를
+   봐야 판단되는 경우 databricks-sql로 조회한다. 단 두 한계를 반드시 감안한다:
+   - **약 30분 동기화 지연**: databricks는 실시간이 아니다. 방금 발생한(최근 30분 이내) 건은 아직 안 들어와
+     있을 수 있다. 최근 상황은 로그로, 조금 지난 정황은 databricks로 본다.
+   - **전체 데이터가 있지는 않다**: 모든 테이블이 databricks에 연동돼 있지 않다. 찾는 데이터가 없으면
+     "databricks에 없어서 확인 못 함"으로 두고, 코드·로그 기반 판단으로 답한다.
+   - databricks 접근 자체가 안 되면(연결 없음 등) 조용히 건너뛰고 코드·로그로 답한다. 없다고 답을 멈추지 않는다.
 
-### Grafana 인증 스택 (`src/grafana/`)
+## 그 밖의 문의
 
-사내 Grafana는 서비스계정 토큰을 지원하지 않아 `grafana_session` 쿠키만 쓴다. `ensureAuth()`(`auth.ts`)가 **3단 복구**를 한다. 이 순서가 이 서브시스템의 핵심이다.
+- **화면·기능 위치 문의**: WMS 프론트(admin-web)나 백엔드 소스를 읽어 실제로 있는지 확인하고 답한다.
+  PDA 화면과 데스크톱(PC) 화면은 나뉘어 있으니, "PDA에 있냐"는 질문엔 그 구분까지 확인한다.
+- 답변 눈높이는 질문자의 직군(개발자 / PO / 비개발)에 맞춘다. 이 판단 기준은 봇이 프롬프트로 넣어 준다.
 
-1. 저장된 쿠키가 유효하면 그대로 사용 (`session.ts` `checkAuth`).
-2. 만료면 `/user/auth-tokens/rotate`로 **가벼운 HTTP 복구**를 먼저 시도 (`session.ts` `rotateSession`). SSO 세션이 살아있는 한 대부분 여기서 Chrome 없이 풀린다.
-3. rotate까지 실패한 최후에만 전용 Chrome을 CDP로 조종해 Keycloak+OTP 재로그인 (`browser-login.ts`, `cdp.ts`, `chrome.ts`, `otp.ts`).
+## 용어집
 
-**함정**: `queryLoki`/`query`는 `forceRefresh` 없이 `ensureAuth`를 불러 rotate를 먼저 탄다. 하지만 `login` 명령은 `forceRefresh:true`라 **rotate를 건너뛰고 곧장 Chrome을 띄운다**. 그래서 만료 복구는 `login`이 아니라 `query`(또는 rotate 포함 경로)로 시작해야 한다. `login`은 최초 설정·수동 복구 전용이다.
+<!-- TODO: 로대리가 헷갈릴 만한 물류 용어·사내 약어를 여기 채운다.
+     사내에서만 통하는 특수한 뜻이 있는 단어 위주로. (예: 적치, 피킹, 출고 마감 등)
+     지금은 비어 있음 — 필요할 때 추가. -->
 
-세션 파일·전용 Chrome 프로필은 `~/.logisbi/`(=`LOGISBI_STATE_DIR`)에 둔다.
+## 자주 오는 질문 유형
 
-## 규약과 주의점
-
-- **ESM + `tsx`**: 빌드 단계가 없다. `.ts`를 `tsx`로 직접 실행하고, import는 `.js` 확장자로 쓴다(NodeNext). 산출물이 없으므로 검증은 `npm run typecheck`로 한다.
-- **의도적으로 오더비(orderby) 봇을 참고**: `runClaude`, 스케줄러 등은 사내 오더비 봇의 대응 로직을 이식한 것이다. 주석의 오더비 언급은 설계 출처를 가리킨다.
-- **`.mcp.json`**: Notion MCP(`kakaostyle-mcp-alpha-notion`)를 등록한다. wms-briefing 스킬이 Datadog·Notion MCP를 쓴다.
-- **환경변수로 동작이 갈린다**: `BRIEFING_CHANNEL`이 없으면 스케줄러는 조용히 비활성(봇은 정상). `CODE_SYNC=1`이면 답변 전 참조 프로젝트를 remote main으로 강제 최신화. `CLAUDE_MODEL`(기본 sonnet), `CLAUDE_TIMEOUT_MS`(멘션 10분), `BRIEFING_TIMEOUT_MS`(브리핑 25분)로 조정한다. 셸 환경변수가 `.env`보다 우선한다.
-- **운영/개발은 별도 Slack 앱으로 분리**: 같은 봇 토큰으로 두 곳에서 띄우면 Slack이 멘션을 두 프로세스에 번갈아 보내 개발 코드가 실제 답변을 가로채고 브리핑이 중복된다. 운영(`로대리`, 상시 실행, `CODE_SYNC=1`)과 개발(`로대리-dev`, 로컬)은 앱·토큰·채널을 나눈다. 절차는 `docs/deploy.md`.
+<!-- TODO: 실제로 자주 오는 질문 패턴이 쌓이면 여기 정리한다.
+     지금 확인된 것: 오류 발생 시 원인 조회, 특정 화면·기능 존재 여부. -->
